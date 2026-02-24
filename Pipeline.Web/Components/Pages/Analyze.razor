@@ -1,0 +1,105 @@
+@page "/analyze"
+@rendermode InteractiveServer
+@using Pipeline.Core.Models
+@using Pipeline.Core.Services
+
+<PageTitle>Analyze</PageTitle>
+
+<h1>Pipeline Leak Localization</h1>
+
+<div style="max-width: 900px;">
+    <p>Paste CSV with columns: <code>PositionM,PressureKPa</code></p>
+
+    <textarea @bind="CsvText" rows="10" style="width: 100%; font-family: monospace;"></textarea>
+
+    <div style="display:flex; gap: 12px; margin-top: 12px; align-items: end;">
+        <div>
+            <label>Flow In (L/s)</label><br />
+            <input type="number" step="0.1" @bind="FlowIn" />
+        </div>
+        <div>
+            <label>Flow Out (L/s)</label><br />
+            <input type="number" step="0.1" @bind="FlowOut" />
+        </div>
+        <button @onclick="RunAnalysis">Analyze</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <p style="color: red; margin-top: 10px;">@Error</p>
+    }
+
+    @if (Result is not null)
+    {
+        <hr />
+        <h2>Result</h2>
+        <p><b>Predicted leak location:</b> @Result.PredictedLeakLocationM.ToString("0.##") m</p>
+        <p><b>Confidence:</b> @(Result.Confidence * 100).ToString("0.#")%</p>
+        <p><b>Flow loss ratio:</b> @(Result.FlowLossRatio * 100).ToString("0.##")%</p>
+
+        <h3>Top segments</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Segment</th>
+                    <th>ΔP (kPa)</th>
+                    <th>PressureScore</th>
+                    <th>FlowScore</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var top = Result.RankedSegments.Take(10).ToList();
+                    for (int i = 0; i < top.Count; i++)
+                    {
+                        var s = top[i];
+                        <tr>
+                            <td>@(i + 1)</td>
+                            <td>@($"{s.StartM:0.#}–{s.EndM:0.#} m")</td>
+                            <td>@s.DeltaPKPa.ToString("0.###")</td>
+                            <td>@s.PressureDropScore.ToString("0.###")</td>
+                            <td>@s.FlowLossScore.ToString("0.###")</td>
+                            <td>@s.TotalScore.ToString("0.###")</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private string CsvText { get; set; } =
+@"PositionM,PressureKPa
+0,520
+100,518
+200,515
+300,480
+400,478
+500,477
+600,476";
+
+    private double FlowIn { get; set; } = 200;
+    private double FlowOut { get; set; } = 190;
+
+    private string Error { get; set; } = "";
+    private LeakAnalysisResult? Result { get; set; }
+
+    private void RunAnalysis()
+    {
+        Error = "";
+        Result = null;
+
+        try
+        {
+            var readings = CsvLoader.LoadPositionPressureCsv(CsvText);
+            Result = LeakAnalyzer.Analyze(readings, FlowIn, FlowOut);
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+    }
+}
